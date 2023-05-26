@@ -24,6 +24,8 @@ func SetupRouter(RepoPeminjaman controllers.PeminjamanRepo) *gin.Engine {
 	protectedRouter := r.Group("/api/peminjaman")
 	protectedRouter.Use(middleware.ApiKey(), middleware.Jwt())
 	protectedRouter.POST("/create", api.RepoPeminjaman.CreatePeminjam)
+	protectedRouter.GET("/getall", api.RepoPeminjaman.GetAll)
+	protectedRouter.GET("/get-file", api.RepoPeminjaman.GetFile)
 	protectedRouter.POST("/email", api.RepoPeminjaman.SendEmail)
 
 	return r
