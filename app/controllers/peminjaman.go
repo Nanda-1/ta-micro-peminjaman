@@ -1,14 +1,20 @@
 package controllers
 
 import (
+	"fmt"
+	"io/ioutil"
+	"net/http"
 	"net/smtp"
 	"os"
+	"path/filepath"
 	"strings"
+	"ta_microservice_peminjaman/app/helper"
 	"ta_microservice_peminjaman/app/models"
 	"ta_microservice_peminjaman/db"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -18,33 +24,12 @@ type PeminjamanRepo struct {
 
 func NewPeminjaman() *PeminjamanRepo {
 	db := db.InitDb()
-	db.AutoMigrate(&models.Users{}, &models.PeminjamanDetail{})
+	db.AutoMigrate(&models.Users{}, &models.PeminjamanDetail{}, &models.FileDetail{})
 	return &PeminjamanRepo{Db: db}
 }
 
 func (repo *PeminjamanRepo) CreatePeminjam(c *gin.Context) {
 	res := models.JsonResponse{Success: true}
-
-	file, err := c.FormFile("file")
-	if err != nil {
-		res.Success = false
-		ErrMSG := err.Error()
-		res.Error = &ErrMSG
-		c.JSON(400, res)
-		return
-	}
-
-	if _, err := os.Stat("./uploads"); os.IsNotExist(err) {
-		os.Mkdir("./uploads", os.ModePerm)
-	}
-
-	if err := c.SaveUploadedFile(file, "./uploads/"+file.Filename); err != nil {
-		res.Success = false
-		ErrMSG := err.Error()
-		res.Error = &ErrMSG
-		c.JSON(500, res)
-		return
-	}
 
 	name := c.PostForm("name")
 	email := c.PostForm("email")
@@ -56,118 +41,126 @@ func (repo *PeminjamanRepo) CreatePeminjam(c *gin.Context) {
 
 	startDate, err := time.Parse("2006-01-02", startDateStr)
 	if err != nil {
-		// handle the error if the startDateStr is not in the correct format
+		MsgErr := err.Error()
 		res.Success = false
-		ErrMSG := err.Error()
-		res.Error = &ErrMSG
-		c.JSON(400, res)
+		res.Error = &MsgErr
+		c.JSON(http.StatusBadRequest, res)
 		return
 	}
 
 	endDate, err := time.Parse("2006-01-02", endDateStr)
 	if err != nil {
-		// handle the error if the endDateStr is not in the correct format
+		MsgErr := err.Error()
 		res.Success = false
-		ErrMSG := err.Error()
-		res.Error = &ErrMSG
-		c.JSON(400, res)
+		res.Error = &MsgErr
+		c.JSON(http.StatusBadRequest, res)
 		return
 	}
 
-	user := models.Users{
-		Name:          name,
-		Email:         email,
-		AsalOrganisai: asalOrganisai,
-		PhoneNumber:   phoneNumber,
-		Peminjamans: []models.PeminjamanDetail{
-			{
-				InitialDate: initialDay,
-				StartDate:   startDate,
-				EndDate:     endDate,
-				File:        file.Filename,
-				Created_at:  time.Time{},
-				Updated_at:  time.Time{},
+	// Membuat direktori penyimpanan file jika belum ada
+	fileDir := "./uploads"
+	if _, err := os.Stat(fileDir); os.IsNotExist(err) {
+		os.Mkdir(fileDir, os.ModePerm)
+	}
+
+	// Memproses setiap file yang diunggah
+	for _, file := range c.Request.MultipartForm.File["file"] {
+		// Menginisialisasi variabel untuk menyimpan detail file
+		var fileDetails []models.FileDetail
+
+		fileUUID := uuid.New().String() // Membuat UUID unik untuk setiap file
+		filename := fileUUID + "_" + file.Filename
+		filename = strings.ReplaceAll(filename, " ", "_") // Mengganti spasi dengan garis bawah
+		fileDirClean := filepath.Clean(fileDir)
+		filePath := filepath.Join(fileDirClean, filename)
+
+		if err := c.SaveUploadedFile(file, filePath); err != nil {
+			MsgErr := err.Error()
+			res.Success = false
+			res.Error = &MsgErr
+			c.JSON(http.StatusInternalServerError, res)
+			return
+		}
+
+		fileDetails = append(fileDetails, models.FileDetail{
+			FilePath:       filePath,
+			FileName:       filename,
+			UploadComplete: true,
+			Created_at:     time.Now(),
+			Updated_at:     time.Now(),
+		})
+
+		user := models.Users{
+			Name:          name,
+			Email:         email,
+			AsalOrganisai: asalOrganisai,
+			PhoneNumber:   phoneNumber,
+			Peminjamans: []models.PeminjamanDetail{
+				{
+					InitialDay:  initialDay,
+					StartDate:   startDate,
+					EndDate:     endDate,
+					FileDetails: fileDetails,
+					Created_at:  time.Now(),
+					Updated_at:  time.Now(),
+				},
 			},
-		},
+		}
+
+		// Menyimpan data user ke dalam database
+		if err := repo.Db.Create(&user).Error; err != nil {
+			MsgErr := err.Error()
+			res.Success = false
+			res.Error = &MsgErr
+			c.JSON(http.StatusInternalServerError, res)
+			return
+		}
+
+		send := helper.SendMail(email)
+		if send != nil {
+			res.Success = false
+			MsgErr := err.Error()
+			res.Error = &MsgErr
+			c.JSON(http.StatusInternalServerError, res)
+			return
+		}
+
+		res.Data = user
 	}
 
-	// Menyimpan data user ke dalam database
-	if err := repo.Db.Create(&user).Error; err != nil {
-		res.Success = false
-		ErrMSG := err.Error()
-		res.Error = &ErrMSG
-		c.JSON(500, res)
-		return
-	}
-
-	// result := map[string]interface{}{
-	// 	"User": err,
-	// }
-
-	res.Data = user
-	c.JSON(200, res)
+	c.JSON(http.StatusOK, res)
 
 }
 
 func (repo *PeminjamanRepo) GetFile(c *gin.Context) {
-	// res := models.JsonResponse{Success: true}
+	res := models.JsonResponse{Success: true}
+	peminjamanDetailID := c.Query("peminjaman_detail_id")
 
-	// id := c.Param("id")
-	// if id == "" {
-	// 	res.Success = false
-	// 	errMsg := "Invalid user ID"
-	// 	res.Error = &errMsg
-	// 	c.JSON(http.StatusBadRequest, res)
-	// 	return
-	// }
+	// Query database untuk mendapatkan file
+	var file models.FileDetail
+	err := repo.Db.Where("peminjaman_detail_id = ?", peminjamanDetailID).First(&file).Error
+	if err != nil {
+		res.Success = false
+		MsgErr := err.Error()
+		res.Error = &MsgErr
+		c.JSON(http.StatusInternalServerError, res)
+		return
 
-	// idInt, err := strconv.Atoi(id)
-	// if err != nil {
-	// 	MsgErr := err.Error()
-	// 	res.Success = false
-	// 	res.Error = &MsgErr
-	// 	c.JSON(http.StatusBadRequest, res)
-	// 	return
-	// }
+	}
 
-	// file, err := models.GetFile(idInt)
-	// if err != nil {
-	// 	MsgErr := err.Error()
-	// 	res.Success = false
-	// 	res.Error = &MsgErr
-	// 	c.JSON(http.StatusBadRequest, res)
-	// 	return
-	// }
+	// Membaca file dari sistem penyimpanan
+	data, err := ioutil.ReadFile(file.FilePath)
+	if err != nil {
+		res.Success = false
+		MsgErr := err.Error()
+		res.Error = &MsgErr
+		c.JSON(http.StatusInternalServerError, res)
+		return
+	}
 
-	// // Set the response headers
-	// c.Header("Content-Type", "application/pdf")
-	// c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", file))
-
-	// // Create a new PDF document
-	// pdf := gofpdf.New("P", "mm", "A4", "")
-	// pdf.AddPage()
-
-	// // Register the file data as a PDF image
-	// pdf.RegisterImageOptionsReader("", gofpdf.ImageOptions{
-	// 	ImageType: "pdf",
-	// }, bytes.NewReader(file))
-
-	// // Use the image on the PDF document
-	// pdf.ImageOptions("", 0, 0, 0, 0, false, gofpdf.ImageOptions{}, 0, "")
-
-	// // Generate the PDF output
-	// var buffer bytes.Buffer
-	// err = pdf.Output(&buffer)
-	// if err != nil {
-	// 	MsgErr := err.Error()
-	// 	res.Success = false
-	// 	res.Error = &MsgErr
-	// 	c.JSON(http.StatusBadRequest, res)
-	// 	return
-	// }
-
-	// // Send the PDF as the response
-	// c.Data(http.StatusOK, "application/pdf", buffer.Bytes())
+	// Mengatur header untuk men-download file
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%s", file.FileName))
+	c.Data(http.StatusOK, "application/octet-stream", data)
 
 }
 
@@ -184,6 +177,22 @@ func (repo *PeminjamanRepo) GetAll(c *gin.Context) {
 	}
 
 	res.Data = Get
+	c.JSON(200, res)
+}
+
+func (repo *PeminjamanRepo) CountBorrower(c *gin.Context) {
+	res := models.JsonResponse{Success: true}
+
+	count, err := models.CountPeminjam()
+	if err != nil {
+		MsgErr := err.Error()
+		res.Success = false
+		res.Error = &MsgErr
+		c.JSON(400, res)
+		return
+	}
+
+	res.Data = count
 	c.JSON(200, res)
 }
 
@@ -215,9 +224,9 @@ func (repo *PeminjamanRepo) SendEmail(c *gin.Context) {
 
 	host := "smtp.gmail.com"
 	port := "587"
-	auth := smtp.PlainAuth("", "rinandasoe@gmail.com", "cggudwsusrzaxzfu", "smtp.gmail.com")
+	auth := smtp.PlainAuth("", "Impeesa@perbanas.id", "Sukamantri123", "smtp.gmail.com")
 
-	err = smtp.SendMail(host+":"+port, auth, "rinandasoe@gmail.com", to, []byte(body))
+	err = smtp.SendMail(host+":"+port, auth, "Impeesa@perbanas.id", to, []byte(body))
 	if err != nil {
 		res.Success = false
 		ErrMSG := err.Error()

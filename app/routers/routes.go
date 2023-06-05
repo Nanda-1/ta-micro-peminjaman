@@ -22,10 +22,11 @@ func SetupRouter(RepoPeminjaman controllers.PeminjamanRepo) *gin.Engine {
 	r.Use(middleware.CORSMiddleware())
 
 	protectedRouter := r.Group("/api/peminjaman")
-	protectedRouter.Use(middleware.ApiKey(), middleware.Jwt())
+	protectedRouter.Use(middleware.ApiKey())
 	protectedRouter.POST("/create", api.RepoPeminjaman.CreatePeminjam)
 	protectedRouter.GET("/getall", api.RepoPeminjaman.GetAll)
 	protectedRouter.GET("/get-file", api.RepoPeminjaman.GetFile)
+	protectedRouter.GET("/count", api.RepoPeminjaman.CountBorrower)
 	protectedRouter.POST("/email", api.RepoPeminjaman.SendEmail)
 
 	return r

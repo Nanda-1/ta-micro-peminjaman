@@ -2,7 +2,6 @@ package models
 
 import (
 	"errors"
-	"io/ioutil"
 	"ta_microservice_peminjaman/db"
 	"time"
 )
@@ -19,15 +18,26 @@ type Users struct {
 }
 
 type PeminjamanDetail struct {
-	Id          int       `json:"id" gorm:"primaryKey"`
-	UserId      int       `json:"user_id"`
-	InitialDate string    `json:"initial_date" `
-	StartDate   time.Time `json:"start_date"`
-	EndDate     time.Time `json:"end_date"`
-	File        string    `json:"file"`
-	Created_at  time.Time `json:"created_at"`
-	Updated_at  time.Time `json:"updated_at"`
+	Id                 int          `json:"id" gorm:"primaryKey"`
+	UserId             int          `json:"user_id"`
+	InitialDay         string       `json:"initial_day"`
+	StartDate          time.Time    `json:"start_date"`
+	EndDate            time.Time    `json:"end_date"`
+	FileDetails        []FileDetail `json:"file_details" gorm:"foreignKey:PeminjamanDetailID"`
+	Created_at         time.Time    `json:"created_at"`
+	Updated_at         time.Time    `json:"updated_at"`
 }
+
+type FileDetail struct {
+	Id                 int       `json:"id" gorm:"primaryKey"`
+	PeminjamanDetailID int       `json:"peminjaman_detail_id"`
+	FilePath           string    `json:"file_path"`
+	FileName           string    `json:"file_name"`
+	UploadComplete     bool      `json:"upload_complete"`
+	Created_at         time.Time `json:"created_at"`
+	Updated_at         time.Time `json:"updated_at"`
+}
+
 
 func (PeminjamanDetail) TableName() string {
 	return "peminjaman_details"
@@ -59,19 +69,27 @@ func GetAllUsers() ([]Users, error) {
 	return users, nil
 }
 
-func GetFile(id int) ([]byte, error) {
-	var file PeminjamanDetail
-	result := db.Db.Where("id = ? ", id).Order("id DESC").First(&file)
-	if result.Error != nil {
-		return nil, result.Error
-	}
+// func GetFile(id int) ([]byte, error) {
+// 	var file PeminjamanDetail
+// 	result := db.Db.Where("id = ? ", id).Order("id DESC").First(&file)
+// 	if result.Error != nil {
+// 		return nil, result.Error
+// 	}
 
-	// Read the file from disk or any storage location
-	// and return it as a byte slice
-	fileData, err := ioutil.ReadFile(file.File)
-	if err != nil {
-		return nil, err
-	}
+// 	// Read the file from disk or any storage location
+// 	// and return it as a byte slice
+// 	fileData, err := ioutil.ReadFile(file.File)
+// 	if err != nil {
+// 		return nil, err
+// 	}
 
-	return fileData, nil
+// 	return fileData, nil
+// }
+
+func CountPeminjam() (int64, error) {
+	var count int64
+	if err := db.Db.Table("users").Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return count, nil
 }
