@@ -24,10 +24,11 @@ func SetupRouter(RepoPeminjaman controllers.PeminjamanRepo) *gin.Engine {
 	protectedRouter := r.Group("/api/peminjaman")
 	protectedRouter.Use(middleware.ApiKey())
 	protectedRouter.POST("/create", api.RepoPeminjaman.CreatePeminjam)
-	protectedRouter.GET("/getall", api.RepoPeminjaman.GetAll)
+	protectedRouter.GET("/get-borrow", api.RepoPeminjaman.GetAll)
 	protectedRouter.GET("/get-file", api.RepoPeminjaman.GetFile)
 	protectedRouter.GET("/count", api.RepoPeminjaman.CountBorrower)
-	protectedRouter.POST("/email", api.RepoPeminjaman.SendEmail)
+	protectedRouter.POST("/email", api.RepoPeminjaman.SendApproved)
+	// protectedRouter.POST("/remender", api.RepoPeminjaman.SendReminderEmail)
 
 	return r
 }

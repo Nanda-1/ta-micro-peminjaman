@@ -9,23 +9,24 @@ import (
 type Users struct {
 	Id            int                `json:"id" gorm:"primaryKey"`
 	Name          string             `json:"name"`
-	Email         string             `json:"email" gorm:"unique"`
+	Email         string             `json:"email"`
 	AsalOrganisai string             `json:"asal_organisai"`
 	PhoneNumber   string             `json:"phone_number"`
+	Status        string             `json:"status"`
 	Peminjamans   []PeminjamanDetail `json:"peminjamans" gorm:"constraint:OnUpdate:CASCADE,OnDelete:SET NULL;foreignKey:UserId"`
 	Created_at    time.Time          `json:"created_at"`
 	Updated_at    time.Time          `json:"updated_at"`
 }
 
 type PeminjamanDetail struct {
-	Id                 int          `json:"id" gorm:"primaryKey"`
-	UserId             int          `json:"user_id"`
-	InitialDay         string       `json:"initial_day"`
-	StartDate          time.Time    `json:"start_date"`
-	EndDate            time.Time    `json:"end_date"`
-	FileDetails        []FileDetail `json:"file_details" gorm:"foreignKey:PeminjamanDetailID"`
-	Created_at         time.Time    `json:"created_at"`
-	Updated_at         time.Time    `json:"updated_at"`
+	Id          int          `json:"id" gorm:"primaryKey"`
+	UserId      int          `json:"user_id"`
+	InitialDay  string       `json:"initial_day"`
+	StartDate   time.Time    `json:"start_date"`
+	EndDate     time.Time    `json:"end_date"`
+	FileDetails []FileDetail `json:"file_details" gorm:"foreignKey:PeminjamanDetailID"`
+	Created_at  time.Time    `json:"created_at"`
+	Updated_at  time.Time    `json:"updated_at"`
 }
 
 type FileDetail struct {
@@ -37,7 +38,6 @@ type FileDetail struct {
 	Created_at         time.Time `json:"created_at"`
 	Updated_at         time.Time `json:"updated_at"`
 }
-
 
 func (PeminjamanDetail) TableName() string {
 	return "peminjaman_details"
@@ -62,10 +62,17 @@ func GetPeminjamByID(id int) (*Users, error) {
 }
 func GetAllUsers() ([]Users, error) {
 	var users []Users
-	result := db.Db.Preload("Peminjamans").Find(&users)
+	result := db.Db.Find(&users)
 	if result.Error != nil {
-		return nil, result.Error
+		return nil, result.Error	
 	}
+
+	for i := range users {
+		var peminjamanDetails []PeminjamanDetail
+		db.Db.Where("user_id = ?", users[i].Id).Preload("FileDetails").Find(&peminjamanDetails)
+		users[i].Peminjamans = peminjamanDetails
+	}
+
 	return users, nil
 }
 

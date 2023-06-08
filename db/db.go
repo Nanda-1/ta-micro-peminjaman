@@ -9,7 +9,7 @@ import (
 
 const DB_USERNAME = "root"
 const DB_PASSWORD = ""
-const DB_NAME = "ta-micro-peminjamaan_new"
+const DB_NAME = "ta-micro-peminjamaan"
 const DB_HOST = "127.0.0.1"
 const DB_PORT = "3306"
 

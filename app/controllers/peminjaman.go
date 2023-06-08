@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"net/smtp"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,6 +26,8 @@ func NewPeminjaman() *PeminjamanRepo {
 	db.AutoMigrate(&models.Users{}, &models.PeminjamanDetail{}, &models.FileDetail{})
 	return &PeminjamanRepo{Db: db}
 }
+
+// Fungsi untuk memeriksa jenis file yang diunggah
 
 func (repo *PeminjamanRepo) CreatePeminjam(c *gin.Context) {
 	res := models.JsonResponse{Success: true}
@@ -64,15 +65,33 @@ func (repo *PeminjamanRepo) CreatePeminjam(c *gin.Context) {
 	}
 
 	// Memproses setiap file yang diunggah
-	for _, file := range c.Request.MultipartForm.File["file"] {
+	for _, fileHeader := range c.Request.MultipartForm.File["file"] {
 		// Menginisialisasi variabel untuk menyimpan detail file
 		var fileDetails []models.FileDetail
 
+		// Batasan jenis file yang diizinkan
+		if !helper.IsFileTypeAllowed(fileHeader) {
+			MsgErr := "File type not allowed. Only PDF files are allowed."
+			res.Success = false
+			res.Error = &MsgErr
+			c.JSON(http.StatusBadRequest, res)
+			return
+		}
+
+		// Batasan ukuran file
+		if !helper.IsFileSizeAllowed(fileHeader) {
+			MsgErr := "File size exceeds the limit. Maximum file size allowed is 5MB."
+			res.Success = false
+			res.Error = &MsgErr
+			c.JSON(http.StatusBadRequest, res)
+			return
+		}
+
+		file := fileHeader
 		fileUUID := uuid.New().String() // Membuat UUID unik untuk setiap file
 		filename := fileUUID + "_" + file.Filename
 		filename = strings.ReplaceAll(filename, " ", "_") // Mengganti spasi dengan garis bawah
-		fileDirClean := filepath.Clean(fileDir)
-		filePath := filepath.Join(fileDirClean, filename)
+		filePath := filepath.Join(fileDir, filename)
 
 		if err := c.SaveUploadedFile(file, filePath); err != nil {
 			MsgErr := err.Error()
@@ -95,6 +114,7 @@ func (repo *PeminjamanRepo) CreatePeminjam(c *gin.Context) {
 			Email:         email,
 			AsalOrganisai: asalOrganisai,
 			PhoneNumber:   phoneNumber,
+			Status:        "pending",
 			Peminjamans: []models.PeminjamanDetail{
 				{
 					InitialDay:  initialDay,
@@ -105,8 +125,9 @@ func (repo *PeminjamanRepo) CreatePeminjam(c *gin.Context) {
 					Updated_at:  time.Now(),
 				},
 			},
+			Created_at: time.Now(),
+			Updated_at: time.Now(),
 		}
-
 		// Menyimpan data user ke dalam database
 		if err := repo.Db.Create(&user).Error; err != nil {
 			MsgErr := err.Error()
@@ -116,7 +137,7 @@ func (repo *PeminjamanRepo) CreatePeminjam(c *gin.Context) {
 			return
 		}
 
-		send := helper.SendMail(email)
+		send := helper.SendMail(user.Email, user.Name)
 		if send != nil {
 			res.Success = false
 			MsgErr := err.Error()
@@ -129,7 +150,6 @@ func (repo *PeminjamanRepo) CreatePeminjam(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, res)
-
 }
 
 func (repo *PeminjamanRepo) GetFile(c *gin.Context) {
@@ -200,42 +220,114 @@ type NotificationRequest struct {
 	To string `json:"to"`
 }
 
-func (repo *PeminjamanRepo) SendEmail(c *gin.Context) {
+func (repo *PeminjamanRepo) SendApproved(c *gin.Context) {
 	res := models.JsonResponse{Success: true}
 
-	var reqBody NotificationRequest
-	err := c.ShouldBindJSON(&reqBody)
+	userID := c.Query("id")
+	status := c.Query("status")
+
+	user := models.Users{}
+	err := repo.Db.First(&user, userID).Error
 	if err != nil {
 		res.Success = false
 		ErrMSG := err.Error()
 		res.Error = &ErrMSG
-		c.JSON(400, res)
+		c.JSON(http.StatusBadRequest, res)
 		return
 	}
 
-	to := []string{reqBody.To}
-	msg := "Pengajuan peminjaman alat anda sudah disetujui segera datang kembali ke sekretariat mapala impeesa untuk mengambil barang"
-	subject := "Pengajuan peminjaman"
-	body := "From: " + os.Getenv("CONFIG_SENDER_NAME") + "\n" +
-		"To: " + strings.Join(to, ",") + "\n" +
-		"Cc: " + strings.Join(to, ",") + "\n" +
-		"Subject: " + subject + "\n\n" +
-		msg
+	if status == "approve" {
+		user.Status = "approve"
+		send := helper.SendMailAproved(user.Email, user.Name)
+		if send != nil {
+			res.Success = false
+			MsgErr := send.Error()
+			res.Error = &MsgErr
+			c.JSON(http.StatusInternalServerError, res)
+			return
+		}
+	} else if status == "reject" {
+		user.Status = "reject"
+		send := helper.SendMailRejected(user.Email, user.Name)
+		if send != nil {
+			res.Success = false
+			MsgErr := send.Error()
+			res.Error = &MsgErr
+			c.JSON(http.StatusInternalServerError, res)
+			return
+		}
+	}
 
-	host := "smtp.gmail.com"
-	port := "587"
-	auth := smtp.PlainAuth("", "Impeesa@perbanas.id", "Sukamantri123", "smtp.gmail.com")
-
-	err = smtp.SendMail(host+":"+port, auth, "Impeesa@perbanas.id", to, []byte(body))
+	err = repo.Db.Save(&user).Error
 	if err != nil {
 		res.Success = false
 		ErrMSG := err.Error()
 		res.Error = &ErrMSG
-		c.JSON(400, res)
+		c.JSON(http.StatusInternalServerError, res)
 		return
 	}
 
-	res.Data = "Email Berhasil dikirim"
+	result := map[string]interface{}{
+		"Message": "Data berhasil diperbarui",
+		"status":  user.Status,
+	}
 
-	c.JSON(200, res)
+	res.Data = result
+	c.JSON(http.StatusOK, res)
+
+}
+
+func SendReminderEmails(repo *PeminjamanRepo) {
+	res := models.JsonResponse{Success: true}
+
+	// Mengambil seluruh data pengguna
+	users, err := models.GetAllUsers()
+	if err != nil {
+		res.Success = false
+		ErrMSG := "Error GetAllUsers"
+		res.Error = &ErrMSG
+		fmt.Println(res)
+		return
+	}
+
+	for _, user := range users {
+		var peminjamanDetail models.PeminjamanDetail
+
+		if len(user.Peminjamans) > 0 {
+			// Mengambil PeminjamanDetail dari slice pertama
+			peminjamanDetail = user.Peminjamans[0]
+		} else {
+			// Menghandle jika tidak ada PeminjamanDetail yang ditemukan
+			res.Success = false
+			ErrMSG := "PeminjamanDetail not found"
+			res.Error = &ErrMSG
+			fmt.Println(res)
+			return // Melanjutkan ke pengguna berikutnya jika tidak ada PeminjamanDetail
+		}
+
+		// Menghitung selisih waktu antara sekarang dan EndDate
+		timeDiff := peminjamanDetail.EndDate.Sub(time.Now())
+
+		// Mengatur durasi reminder sebelum EndDate (misalnya 1 hari sebelumnya)
+		reminderDuration := 24 * time.Hour
+
+		// Mengirim email reminder jika waktu reminder lebih besar dari selisih waktu
+		if timeDiff > reminderDuration {
+			reminderTime := peminjamanDetail.EndDate.Add(-reminderDuration)
+			err := helper.SendReminderEmail(user.Email, user.Name, reminderTime)
+			if err != nil {
+				res.Success = false
+				MsgErr := err.Error()
+				res.Error = &MsgErr
+				fmt.Println(res)
+				return // Melanjutkan ke pengguna berikutnya jika terjadi error saat mengirim email
+			}
+		}
+
+		// Menangani kasus ketika EndDate sudah dekat atau lewat
+		// Anda dapat menambahkan logika tambahan di sini jika diperlukan
+
+		// Menampilkan respons JSON (opsional)
+		fmt.Printf("Reminder email sent for user ID %s\n", user.Id, user.Name)
+	}
 }
