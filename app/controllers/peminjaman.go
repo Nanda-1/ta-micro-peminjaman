@@ -65,10 +65,8 @@ func (repo *PeminjamanRepo) CreatePeminjam(c *gin.Context) {
 	}
 
 	// Memproses setiap file yang diunggah
+	var fileDetails []models.FileDetail
 	for _, fileHeader := range c.Request.MultipartForm.File["file"] {
-		// Menginisialisasi variabel untuk menyimpan detail file
-		var fileDetails []models.FileDetail
-
 		// Batasan jenis file yang diizinkan
 		if !helper.IsFileTypeAllowed(fileHeader) {
 			MsgErr := "File type not allowed. Only PDF files are allowed."
@@ -108,47 +106,47 @@ func (repo *PeminjamanRepo) CreatePeminjam(c *gin.Context) {
 			Created_at:     time.Now(),
 			Updated_at:     time.Now(),
 		})
-
-		user := models.Users{
-			Name:          name,
-			Email:         email,
-			AsalOrganisai: asalOrganisai,
-			PhoneNumber:   phoneNumber,
-			Status:        "pending",
-			Peminjamans: []models.PeminjamanDetail{
-				{
-					InitialDay:  initialDay,
-					StartDate:   startDate,
-					EndDate:     endDate,
-					FileDetails: fileDetails,
-					Created_at:  time.Now(),
-					Updated_at:  time.Now(),
-				},
-			},
-			Created_at: time.Now(),
-			Updated_at: time.Now(),
-		}
-		// Menyimpan data user ke dalam database
-		if err := repo.Db.Create(&user).Error; err != nil {
-			MsgErr := err.Error()
-			res.Success = false
-			res.Error = &MsgErr
-			c.JSON(http.StatusInternalServerError, res)
-			return
-		}
-
-		send := helper.SendMail(user.Email, user.Name)
-		if send != nil {
-			res.Success = false
-			MsgErr := err.Error()
-			res.Error = &MsgErr
-			c.JSON(http.StatusInternalServerError, res)
-			return
-		}
-
-		res.Data = user
 	}
 
+	user := models.Users{
+		Name:          name,
+		Email:         email,
+		AsalOrganisai: asalOrganisai,
+		PhoneNumber:   phoneNumber,
+		Status:        "pending",
+		Peminjamans: []models.PeminjamanDetail{
+			{
+				InitialDay:  initialDay,
+				StartDate:   startDate,
+				EndDate:     endDate,
+				FileDetails: fileDetails,
+				Created_at:  time.Now(),
+				Updated_at:  time.Now(),
+			},
+		},
+		Created_at: time.Now(),
+		Updated_at: time.Now(),
+	}
+
+	// Menyimpan data user ke dalam database
+	if err := repo.Db.Create(&user).Error; err != nil {
+		MsgErr := err.Error()
+		res.Success = false
+		res.Error = &MsgErr
+		c.JSON(http.StatusInternalServerError, res)
+		return
+	}
+
+	send := helper.SendMail(user.Email, user.Name)
+	if send != nil {
+		res.Success = false
+		MsgErr := err.Error()
+		res.Error = &MsgErr
+		c.JSON(http.StatusInternalServerError, res)
+		return
+	}
+
+	res.Data = user
 	c.JSON(http.StatusOK, res)
 }
 
