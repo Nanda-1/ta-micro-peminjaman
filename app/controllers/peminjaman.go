@@ -291,52 +291,40 @@ func SendReminderEmails(repo *PeminjamanRepo) {
 	now := time.Now()
 
 	for _, user := range users {
-		var peminjamanDetail models.PeminjamanDetail
+		for _, peminjamanDetail := range user.Peminjamans {
+			// Menghitung selisih waktu antara sekarang dan EndDate
+			timeDiff := peminjamanDetail.EndDate.Sub(now)
 
-		if len(user.Peminjamans) > 0 {
-			// Mengambil PeminjamanDetail dari slice pertama
-			peminjamanDetail = user.Peminjamans[0]
-		} else {
-			// Menghandle jika tidak ada PeminjamanDetail yang ditemukan
-			res.Success = false
-			ErrMSG := "PeminjamanDetail not found"
-			res.Error = &ErrMSG
-			fmt.Println(res)
-			return // Melanjutkan ke pengguna berikutnya jika tidak ada PeminjamanDetail
-		}
+			// Mengatur durasi reminder sebelum EndDate (misalnya 1 hari sebelumnya)
+			reminderDuration := 24 * time.Hour
 
-		// Menghitung selisih waktu antara sekarang dan EndDate
-		timeDiff := peminjamanDetail.EndDate.Sub(now)
+			if timeDiff > reminderDuration {
+				reminderTime := peminjamanDetail.EndDate.Add(-reminderDuration)
 
-		// Mengatur durasi reminder sebelum EndDate (misalnya 1 hari sebelumnya)
-		reminderDuration := 24 * time.Hour
+				// Mengirim email reminder jika waktu reminder lebih besar dari selisih waktu
+				err := helper.SendReminderEmail(user.Email, user.Name, reminderTime)
+				if err != nil {
+					res.Success = false
+					MsgErr := err.Error()
+					res.Error = &MsgErr
+					fmt.Println(res)
+					return // Melanjutkan ke pengguna berikutnya jika terjadi error saat mengirim email
+				}
 
-		if timeDiff > reminderDuration {
-			reminderTime := peminjamanDetail.EndDate.Add(-reminderDuration)
+				fmt.Printf("Reminder email sent for user ID %s\n", user.Id, user.Name)
+			} else if now.After(peminjamanDetail.EndDate) {
+				// Kasus ketika EndDate sudah lewat
+				err := helper.SendOverdueEmail(user.Email, user.Name, peminjamanDetail.EndDate)
+				if err != nil {
+					res.Success = false
+					MsgErr := err.Error()
+					res.Error = &MsgErr
+					fmt.Println(res)
+					return // Melanjutkan ke pengguna berikutnya jika terjadi error saat mengirim email
+				}
 
-			// Mengirim email reminder jika waktu reminder lebih besar dari selisih waktu
-			err := helper.SendReminderEmail(user.Email, user.Name, reminderTime)
-			if err != nil {
-				res.Success = false
-				MsgErr := err.Error()
-				res.Error = &MsgErr
-				fmt.Println(res)
-				return // Melanjutkan ke pengguna berikutnya jika terjadi error saat mengirim email
+				fmt.Printf("Overdue email sent for user ID %s\n", user.Id, user.Name)
 			}
-
-			fmt.Printf("Reminder email sent for user ID %s\n", user.Id, user.Name)
-		} else if now.After(peminjamanDetail.EndDate) {
-			// Kasus ketika EndDate sudah lewat
-			err := helper.SendOverdueEmail(user.Email, user.Name, peminjamanDetail.EndDate)
-			if err != nil {
-				res.Success = false
-				MsgErr := err.Error()
-				res.Error = &MsgErr
-				fmt.Println(res)
-				return // Melanjutkan ke pengguna berikutnya jika terjadi error saat mengirim email
-			}
-
-			fmt.Printf("Overdue email sent for user ID %s\n", user.Id, user.Name)
 		}
 	}
 }
