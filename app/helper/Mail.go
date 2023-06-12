@@ -130,3 +130,36 @@ Tim Sekretariat Mapala Impeesa Perbanas`
 
 	return nil
 }
+
+
+func SendOverdueEmail(To string, name string, endDate time.Time) error {
+	to := []string{To}
+	msg :=
+		`Halo ` + name + `,
+
+Mohon maaf, pengembalian alat yang Anda pinjam seharusnya sudah dilakukan pada ` + endDate.Format("02 January 2006") + `. Namun, hingga saat ini alat tersebut belum dikembalikan.
+
+Kami harap Anda segera mengembalikan alat tersebut ke sekretariat Mapala Impeesa Perbanas.
+
+Terima kasih atas perhatiannya.
+
+Salam,
+Tim Sekretariat Mapala Impeesa Perbanas`
+	subject := "Pengingat Pengembalian Alat Telah Melewati Batas Waktu"
+	body := "From: " + os.Getenv("CONFIG_SENDER_NAME") + "\n" +
+		"To: " + strings.Join(to, ",") + "\n" +
+		"Cc: " + strings.Join(to, ",") + "\n" +
+		"Subject: " + subject + "\n\n" +
+		msg
+
+	host := "smtp.gmail.com"
+	port := "587"
+	auth := smtp.PlainAuth("", "Impeesa@perbanas.id", "Sukamantri123", "smtp.gmail.com")
+
+	err := smtp.SendMail(host+":"+port, auth, "Impeesa@perbanas.id", to, []byte(body))
+	if err != nil {
+		return err
+	}
+
+	return nil
+}

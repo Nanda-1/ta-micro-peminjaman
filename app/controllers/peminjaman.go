@@ -34,7 +34,7 @@ func (repo *PeminjamanRepo) CreatePeminjam(c *gin.Context) {
 
 	name := c.PostForm("name")
 	email := c.PostForm("email")
-	asalOrganisai := c.PostForm("asal_organisai")
+	asalOrganisai := c.PostForm("asal_organisasi")
 	phoneNumber := c.PostForm("phone_number")
 	initialDay := c.PostForm("initial_day")
 	startDateStr := c.PostForm("start_date")
@@ -288,6 +288,8 @@ func SendReminderEmails(repo *PeminjamanRepo) {
 		return
 	}
 
+	now := time.Now()
+
 	for _, user := range users {
 		var peminjamanDetail models.PeminjamanDetail
 
@@ -304,14 +306,15 @@ func SendReminderEmails(repo *PeminjamanRepo) {
 		}
 
 		// Menghitung selisih waktu antara sekarang dan EndDate
-		timeDiff := peminjamanDetail.EndDate.Sub(time.Now())
+		timeDiff := peminjamanDetail.EndDate.Sub(now)
 
 		// Mengatur durasi reminder sebelum EndDate (misalnya 1 hari sebelumnya)
 		reminderDuration := 24 * time.Hour
 
-		// Mengirim email reminder jika waktu reminder lebih besar dari selisih waktu
 		if timeDiff > reminderDuration {
 			reminderTime := peminjamanDetail.EndDate.Add(-reminderDuration)
+
+			// Mengirim email reminder jika waktu reminder lebih besar dari selisih waktu
 			err := helper.SendReminderEmail(user.Email, user.Name, reminderTime)
 			if err != nil {
 				res.Success = false
@@ -320,12 +323,20 @@ func SendReminderEmails(repo *PeminjamanRepo) {
 				fmt.Println(res)
 				return // Melanjutkan ke pengguna berikutnya jika terjadi error saat mengirim email
 			}
+
+			fmt.Printf("Reminder email sent for user ID %s\n", user.Id, user.Name)
+		} else if now.After(peminjamanDetail.EndDate) {
+			// Kasus ketika EndDate sudah lewat
+			err := helper.SendOverdueEmail(user.Email, user.Name, peminjamanDetail.EndDate)
+			if err != nil {
+				res.Success = false
+				MsgErr := err.Error()
+				res.Error = &MsgErr
+				fmt.Println(res)
+				return // Melanjutkan ke pengguna berikutnya jika terjadi error saat mengirim email
+			}
+
+			fmt.Printf("Overdue email sent for user ID %s\n", user.Id, user.Name)
 		}
-
-		// Menangani kasus ketika EndDate sudah dekat atau lewat
-		// Anda dapat menambahkan logika tambahan di sini jika diperlukan
-
-		// Menampilkan respons JSON (opsional)
-		fmt.Printf("Reminder email sent for user ID %s\n", user.Id, user.Name)
 	}
 }
