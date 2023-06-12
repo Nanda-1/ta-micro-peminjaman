@@ -12,7 +12,7 @@ func main() {
 	r := routers.SetupRouter(*packagePeminjam)
 
 	c := cron.New()
-	_ = c.AddFunc("0 12 * * *", func() {
+	_ = c.AddFunc("0 *6 * * *", func() {
 		controllers.SendReminderEmails(packagePeminjam) // Memanggil SendReminderEmails dengan instance PeminjamanRepo
 	})
 	c.Start()
