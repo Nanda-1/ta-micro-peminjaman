@@ -66,26 +66,31 @@ func (repo *PeminjamanRepo) CreatePeminjam(c *gin.Context) {
 
 	// Memproses setiap file yang diunggah
 	var fileDetails []models.FileDetail
-	for _, fileHeader := range c.Request.MultipartForm.File["file"] {
-		// Batasan jenis file yang diizinkan
-		if !helper.IsFileTypeAllowed(fileHeader) {
+	fileHeaders := c.Request.MultipartForm.File["file"]
+	if len(fileHeaders) == 0 {
+		MsgErr := "No files uploaded. Please upload at least one file."
+		res.Success = false
+		res.Error = &MsgErr
+		c.JSON(http.StatusBadRequest, res)
+		return
+	}
+	for _, fileHeaders := range fileHeaders {
+		if !helper.IsFileTypeAllowed(fileHeaders) {
 			MsgErr := "File type not allowed. Only PDF files are allowed."
 			res.Success = false
 			res.Error = &MsgErr
 			c.JSON(http.StatusBadRequest, res)
 			return
 		}
-
 		// Batasan ukuran file
-		if !helper.IsFileSizeAllowed(fileHeader) {
+		if !helper.IsFileSizeAllowed(fileHeaders) {
 			MsgErr := "File size exceeds the limit. Maximum file size allowed is 5MB."
 			res.Success = false
 			res.Error = &MsgErr
 			c.JSON(http.StatusBadRequest, res)
 			return
 		}
-
-		file := fileHeader
+		file := fileHeaders
 		fileUUID := uuid.New().String() // Membuat UUID unik untuk setiap file
 		filename := fileUUID + "_" + file.Filename
 		filename = strings.ReplaceAll(filename, " ", "_") // Mengganti spasi dengan garis bawah
@@ -233,7 +238,13 @@ func (repo *PeminjamanRepo) SendApproved(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, res)
 		return
 	}
-
+	if user.Status == "approve" || user.Status == "reject" {
+		res.Success = false
+		ErrMsg := "User status has already been set"
+		res.Error = &ErrMsg
+		c.JSON(http.StatusBadRequest, res)
+		return
+	}
 	if status == "approve" {
 		user.Status = "approve"
 		send := helper.SendMailAproved(user.Email, user.Name)
@@ -272,7 +283,6 @@ func (repo *PeminjamanRepo) SendApproved(c *gin.Context) {
 
 	res.Data = result
 	c.JSON(http.StatusOK, res)
-
 }
 
 func SendReminderEmails(repo *PeminjamanRepo) {
